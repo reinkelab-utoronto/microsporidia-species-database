@@ -653,6 +653,36 @@ pd <- p$data
 xmax <- max(pd$x, na.rm = TRUE)
 tip_y <- pd$y[match(seq_len(n_tip), pd$node)]
 
+## ---- how many ARCS each clade forms on the ring, in THIS tree ---------------
+## The legend used to report length(clade_pieces[[nm]]) -- the number of
+## maximal pure subclades. That is computed per tree, but it can exceed what a
+## reader can count: two pure subclades that happen to sit side by side in the
+## tip order fuse into ONE contiguous coloured arc. The legend now reports
+## contiguous arcs in plotting order (the ring is closed, so a clade spanning
+## the seam is one arc, not two). Both counts go to the console and the
+## fragmentation report so they can be reconciled.
+clade_arcs <- local({
+  ord <- order(tip_y)
+  cl  <- ifelse(is.na(tip_clade[ord]), "__none__", tip_clade[ord])
+  r   <- rle(cl)
+  v   <- r$values
+  if (length(v) > 1 && v[1] != "__none__" && v[1] == v[length(v)])
+    v <- v[-1]                              # merge the run across the seam
+  tab <- table(v[v != "__none__"])
+  setNames(as.integer(tab), names(tab))
+})
+cmp <- data.frame(clade = names(clade_pieces),
+                  highlighted_pieces = as.integer(lengths(clade_pieces)),
+                  arcs_on_ring = as.integer(clade_arcs[names(clade_pieces)]),
+                  stringsAsFactors = FALSE)
+cmp$arcs_on_ring[is.na(cmp$arcs_on_ring)] <- 0L
+cat("\n---- clade arcs on the ring (the count the legend reports) ----\n")
+print(cmp, row.names = FALSE)
+if (any(cmp$arcs_on_ring != cmp$highlighted_pieces))
+  cat("  (pieces > arcs: adjacent pure subclades fused into one visible arc)\n")
+report$arcs_on_ring <- cmp$arcs_on_ring[match(report$clade, cmp$clade)]
+write.csv(report, "clade_fragmentation_report.csv", row.names = FALSE)
+
 ## ---- environments: union of route A (hosts) and route B (species name) ------
 ## Route A resolves each host in the cluster and unions the results, so a
 ## provisional cluster still gets habitats. Route B looks the cluster's species
@@ -1097,13 +1127,14 @@ add_legend_box <- function() {
   nl(0.4)
 
   ## --- clades ---
-  hdr("Clade", length(clade_pieces) + 1)
+  hdr("Clade", length(clade_pieces))
   for (nm in names(clade_pieces)) {
-    np <- length(clade_pieces[[nm]])
+    ## computed for this tree above: contiguous arcs the reader can actually
+    ## count, not the (possibly larger) number of pure subclades
+    np <- if (nm %in% names(clade_arcs)) clade_arcs[[nm]] else 0L
     swatch(if (np > 1) sprintf("%s (%d groups)", nm, np) else nm,
            clade_colors[[nm]])
   }
-  note("Minor clades are not monophyletic.")
   nl(0.4)
 
   ## --- environments ---
